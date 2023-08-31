@@ -738,13 +738,6 @@ p4 <- ggplot(df4, aes(x=1, y = Posterior_means)) +
 library(ggpubr)
 
 #boxplot of parameter posterior mean estimates
-jpeg(file="sim1_plot0.jpeg")
-ggarrange(p0, p11, p2,
-          ggarrange(p4, ncol = 2),
-          nrow = 4)
-dev.off()
-
-#boxplot of parameter posterior mean estimates
 jpeg(file="sim1_plot1.jpeg")
 ggarrange(p0, p1, p2,
           ggarrange(p4, ncol = 2),
