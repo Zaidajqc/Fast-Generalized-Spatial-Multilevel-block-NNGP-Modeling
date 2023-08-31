@@ -1,4 +1,4 @@
-# Fast Generalized Spatial Multilevel block-NNGP Modeling
+# Full Multilevel block-NNGP 
 
 ## Zaida Quiroz, Marcos Prates, Zhiyong Hu and Dipak Dey.
 
