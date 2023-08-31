@@ -154,16 +154,12 @@ nzip <- 2500
 coord<-cbind(c(10001:(nzip+10000)),runif(nzip),runif(nzip))
 
 nhouse<-sample(1:5,nzip,replace = T)
-#nhouse<-rep(1,nzip)
 coord<-cbind(coord,nhouse)
 colnames(coord)<-c('zip','horizontal','vertical','nhouse')
 coord<-as.data.frame(coord)
-#nhouse[nhouse<=5]<-5
 
-#nhouse[1:(N-sum(nhouse))] <- nhouse[1:(N-sum(nhouse))]+1
 
 distM <- as.matrix(dist(coord[,c('horizontal','vertical')])) #Euclidean
-#distM<-spDists(as.matrix(ne.zip[,4:5]), longlat = TRUE, segments = FALSE, diagonal = FALSE)/100 #Great Circle distance
 
 R <- sig2*exp(-distM*phis_true)
 R2 <- sig22*exp(-distM*phis_true2)
@@ -177,7 +173,6 @@ cov3 <- unlist(sapply(coord$nhouse, function(x) rpois(x,1)+1))
 set.seed(seed)
 trueZ<-mvtnorm::rmvnorm(1, rep(0,nzip), sigma=R, method = "chol")
 trueZ<-as.vector(trueZ)
-#summary(trueZ)
 
 set.seed(seed)
 trueZ2<-mvtnorm::rmvnorm(1, rep(0,nzip), sigma=R2, method = "chol")
@@ -186,9 +181,6 @@ trueZ2<-as.vector(trueZ2)
 set.seed(seed)
 trueZ3<-mvtnorm::rmvnorm(1, rep(0,nzip), sigma=R3, method = "chol")
 trueZ3<-as.vector(trueZ3)
-
-
-
 
 names(trueZ) <- coord$zip
 names(trueZ2) <- coord$zip
@@ -249,7 +241,6 @@ train.coord <- cbind(train.coord,block.ind)
 train.coord<-train.coord[order(train.coord$block.ind),]
 dist_0<-aggregate(train.coord$horizontal^2+train.coord$vertical^2,list(train.coord$block.ind),mean)
 train.coord$block.ind<-as.factor(rep(match(dist_0$x,sort(dist_0$x)),table(train.coord$block.ind)))
-#ggplot(data = train.coord,mapping = aes(x=horizontal,y=vertical,color=as.factor(block.ind)))+geom_point()
 
 block.center<-cbind(1:nb^2,aggregate(train.coord$horizontal,list(train.coord$block.ind),mean)[,2],
                     aggregate(train.coord$vertical,list(train.coord$block.ind),mean)[,2])
@@ -260,7 +251,6 @@ neighbor.block<-NNMatrix(block.center[,2:3],M,1,'cb',ord = order(block.center[,2
 
 train.coord<-train.coord[order(match(train.coord$block.ind,neighbor.block$ord)),]
 train.coord$block.ind<-rep(1:nb^2,table(train.coord$block.ind)[neighbor.block$ord])
-#ggplot(data = train.coord,mapping = aes(x=horizontal,y=vertical,color=as.factor(block.ind)))+geom_point()
 
 train<-train[order(match(train$zip,train.coord$zip)),]
 
