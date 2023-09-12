@@ -452,7 +452,7 @@ X1 <- data.frame(X[,-1])
 y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
-n.sample <- 100 #1e4
+n.sample <- 100 
 set.seed(5)
 multilevel0.pos <- generate(multilevelS_lognormal1, X1, n.samples = n.sample)
 multilevel0.pos.hyper <- inla.hyperpar.sample(n = n.sample, result=multilevelS_lognormal1)
