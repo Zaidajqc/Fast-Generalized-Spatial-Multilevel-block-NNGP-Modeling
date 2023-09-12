@@ -1,6 +1,5 @@
 
 ############################################################################
-## Author: Z. Quiroz, M. O. Prates, Zhiyong Hu and  D. Dey.
 ## Date: 31.08.2023
 ##
 ## Description:
