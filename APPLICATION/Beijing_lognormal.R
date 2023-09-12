@@ -1,5 +1,6 @@
 
-
+gc()
+rm(list=ls())
 
 library("INLA")
 library(inlabru)
@@ -8,6 +9,9 @@ library(ggplot2)
 library(parallel)
 
 setwd("/set_your_directory/")
+
+dir.save=getwd()
+
 
 
 ####################
@@ -29,26 +33,26 @@ idx1<-match(test$location,test.coord$location)
 # multilevel gamma model in intercept (non-spatial)
 
 svc_formula0 <- totalPrice~ -1 + intercept +  area  + livingRoom + 
-  gamma_int_elev +   gamma_int_subway +  gamma_int_Freq + 
-  gamma_int_age #+   f(idx, model = "iid")
+  gamma_int_elev +   gamma_int_subway +    gamma_int_age 
 
+# formula, with "." meaning "add all the model components":
 
 multilevelNS_lognormal <- bru( svc_formula0,
-              family = "lognormal",
-              data = train,
-            options = list(
-              control.compute = list(waic = TRUE, cpo = TRUE),
-              control.inla = list(strategy = "simplified.laplace", int.strategy = "eb"),
-              verbose = FALSE
-            )
+                           family = "lognormal",
+                           data = train,
+                           options = list(
+                             control.compute = list(waic = TRUE, cpo = TRUE),
+                             verbose = FALSE
+                           )
 )  
+
 
 ## save non-spatial model
 save(multilevelNS_lognormal, file = "multilevelNS_lognormal.RData")
 
-round(multilevelNS_lognormal$summary.hyperpar[, c(5,3, 4)],3)
+round(multilevelNS_lognormal$summary.hyperpar[, c(1, 5,3, 4)],3)
 
-round(multilevelNS_lognormal$summary.fixed[, c(5,3, 4)] ,3)
+round(multilevelNS_lognormal$summary.fixed[, c(1, 5,3, 4)] ,3)
 
 dic= multilevelNS_lognormal$dic$dic
 waic = multilevelNS_lognormal$waic$waic
@@ -62,57 +66,57 @@ y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
 fit0 <- multilevelNS_lognormal$summary.fitted.values[1:length(y),]
+
+y<- (train$totalPrice)
 pred <- exp(fit0[,1]+((1/multilevelNS_lognormal$summary.hyperpar[1,1])^2)/2 )
-par(mfrow=c(1,1))
-plot(y, pred)
-abline(0,1, col="grey40")
+RMSE<- sqrt(mean((pred-y)^2))
 
 
 plot0 <- data.frame(location=train$location, totalPrice=train$totalPrice, 
-                    Lng=train$Lng, Lat=train$Lat, pred=pred)
+                    Lng=train$Lng, Lat=train$Lat, pred=pred )
 dir.save=getwd()
-png(paste(dir.save,"/est_lognormal_multilevelNS",".png",sep=""))
+png(paste(dir.save,"/est_gamma_multilevelNS",".png",sep=""))
 ggplot(data = plot0,mapping = aes(x=totalPrice,y=pred))+geom_point()+
   geom_abline(colour = "grey50")+ 
   labs(x = "y", y = "y_est")
 dev.off()
 
 
-
-
 X <- as.matrix(cbind(1,train[,c("area","livingRoom","gamma_int_elev",
-                                "gamma_int_subway","gamma_int_Freq", 
+                                "gamma_int_subway", 
                                 "gamma_int_age")]))
 X0 <- data.frame(X[,-1])
 
 y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
-n.sample <- 1e4
+n.sample <- 100 #1e4
 set.seed(5)
 multilevel0.pos <- generate(multilevelNS_lognormal, X0, n.samples = n.sample)
+multilevel0.pos.hyper <- inla.hyperpar.sample(n = n.sample, result=multilevelNS_lognormal)
 
-
-
-
+filename2= paste("multilevelNS_lognormal_posterior.Rdata",sep="")
+save(multilevel0.pos, file=filename2)
+filename2= paste("multilevelNS_lognormal_posteriorprec.Rdata",sep="")
+save(multilevel0.pos.hyper, file=filename2)
 
 
 
 get.est0<-function(i){
-  precision<-multilevel0.pos[[i]]$Precision_for_the_lognormal_observations
-  coef <- matrix(unlist(multilevel0.pos[[i]][2:8]), 7,1)
-  mu <- X%*%coef
-  #+            rep(multilevel0.pos[[i]]$f[1:nzip],train.coord$Freq)
+  precision<-multilevel0.pos.hyper[[i]]
+  coef <- matrix(unlist(multilevel0.pos[[i]][2:7]), 6,1)
+  mu <- (X%*%coef)
+  #+              rep(multilevel0.pos[[i]]$f[1:nzip],train.coord$Freq))
   res10<-rlnorm(n=dim(X)[1], mu ,  sqrt(1/precision))
   return(res10)
 }
 y.rep0<-mclapply(1:n.sample,get.est0,mc.cores = 4)
-y.rep0<-do.call(rbind,y.rep0)
+y.rep0<-do.call(cbind,y.rep0)
 
 
 
 X.test <- as.matrix(cbind(1,test[,c("area","livingRoom","gamma_int_elev",
-                                    "gamma_int_subway","gamma_int_Freq", 
+                                    "gamma_int_subway", 
                                     "gamma_int_age")]))
 
 y.test<-(test$totalPrice)
@@ -121,20 +125,20 @@ nzip<-dim(train.coord)[1]
 
 
 get.pre<-function(i){
-  precision<-multilevel0.pos[[i]]$Precision_for_the_lognormal_observations
-  coef <- matrix(unlist(multilevel0.pos[[i]][2:8]), 7,1)
-  mu <- X.test%*%coef
+  precision<-multilevel0.pos.hyper[[i]]#$Precision_parameter_for_the_Gamma_observations
+  coef <- matrix(unlist(multilevel0.pos[[i]][2:7]), 6,1)
+  mu <-(X.test%*%coef)
   res2<-rlnorm(n=dim(X.test)[1], mu ,  sqrt(1/precision))
   return(res2)
 }
 
 
-y.pre<-mclapply(1:n.sample, get.pre, mc.cores = 4)
-y.pre<-do.call(rbind, y.pre)
+y.pre1<-mclapply(1:n.sample, get.pre, mc.cores = 4)
+y.pre<-do.call(cbind, y.pre1)
 
-pre.block.nngp2<-colMeans(y.pre)
+pre.block.nngp2<-rowMeans(y.pre)
 
-est.block.nngp<-colMeans(y.rep0)
+est.block.nngp<-rowMeans(y.rep0)
 
 RMSEy<- sqrt(mean((est.block.nngp-y)^2))
 
@@ -142,7 +146,7 @@ RMSP<- sqrt(mean((pre.block.nngp2-y.test)^2))
 
 # save final res
 name.crit <- c("dic", "waic", "LPML", "RMSEy","time(sec)", "RMSPy")
-crit.model<- round(c( dic, waic, LPML, RMSEy, time, RMSP),3)
+crit.model<- round(c( dic, waic, LPML, RMSE, time, RMSP),3)
 res=data.frame(name.crit, val=crit.model)
 save(res, file="multilevelNS_lognormal_summary.Rdata")
 
@@ -154,18 +158,18 @@ save(res, file="multilevelNS_lognormal_summary.Rdata")
 
 rm(list=ls())
 
+
 load("/set_your_directory/NEWbeijing.RData")
 
 # Set the number of blocks L and the number of neighbors M
-L=7 #2^L blocks
-M=4 #number of neighbors
+L=8 #2^L blocks
+M=8 #number of neighbors
 
 dir.save=getwd()
 idx<-match(train$location,train.coord$location)
 idx1<-match(test$location,test.coord$location)
 
 ##Blocking
-#L=8 #2^L blocks
 
 train.coord$block.ind<-1
 train.coord$ind<-1
@@ -191,7 +195,7 @@ block.center<-cbind(aggregate(train.coord$Lng,list(train.coord$block.ind),mean)[
                     1:2^L)
 block.center<-as.data.frame(block.center)
 
-#M=2 #number of neighbors
+
 NN_ind<-matrix(rep(0, (dim(block.center)[1]-1)*M),nrow = dim(block.center)[1]-1,ncol = M)
 NN_distM<-matrix(rep(0, (dim(block.center)[1]-1)*M*(M-1)/2),nrow = dim(block.center)[1]-1,ncol = M*(M-1)/2)
 NN_dist<-matrix(rep(0, (dim(block.center)[1]-1)*M),nrow = dim(block.center)[1]-1,ncol = M)
@@ -303,7 +307,7 @@ inla.rgeneric.blocknngp.model <- function(
     Q<-Bs%*%F.inv%*%t(Bs)
     
     return (Q)
-  }
+   }
   
   mu = function() {
     return(numeric(0))
@@ -339,7 +343,6 @@ library("INLA")
 
 
 ## Calculate hyperparameters
-#range <- (8*nu)/2*phis
 d=2
 prior.range  = c(0.1,0.05)
 prior.sigma  = c(1 ,0.05)
@@ -366,7 +369,7 @@ block.nngp.model2 <- inla.rgeneric.define(inla.rgeneric.blocknngp.model, nzip=di
 ###############################################################
 
 svc_formula1 <- totalPrice ~ -1 + intercept +  area  + livingRoom + 
-  gamma_int_elev +   gamma_int_subway +  gamma_int_Freq + 
+  gamma_int_elev +   gamma_int_subway + 
   gamma_int_age + 
   spatintercept(idx, model = block.nngp.model)
 
@@ -376,19 +379,17 @@ multilevelS_lognormal1 <- bru( svc_formula1,
               data = train,
             options = list(
               control.compute = list(waic = TRUE, cpo = TRUE),
-              control.inla = list(strategy = "simplified.laplace", int.strategy = "eb"),
               verbose = FALSE
             )
 )  
 
 
 ## save spatial model
-## L= blocks=256, M=4
-n.blocks <- 2^L
+n.blocks = 2^L
 filename=paste('multilevelIntS_lognormal',n.blocks,'_',M,".RData",sep="")
 save(multilevelS_lognormal1, file = filename)
 
-round(multilevelS_lognormal1$summary.fixed[, c(1,4,3, 5)] ,3)
+round(multilevelS_lognormal1$summary.fixed[, c(1, 4,3, 5)] ,3)
 
 round(multilevelS_lognormal1$summary.hyperpar[, c(1, 4,3, 5)],3)
 
@@ -397,6 +398,10 @@ waic = multilevelS_lognormal1$waic$waic
 LPML = sum(log(multilevelS_lognormal1$cpo$cpo))
 time = sum(multilevelS_lognormal1$bru_timings[,3])
 
+y<- (train$totalPrice)
+est0 <- multilevelS_lognormal1$summary.fitted.values$mean[1:length(y)]
+pred <- exp(est0+((1/multilevelS_lognormal1$summary.hyperpar[1,1])^2)/2 )
+RMSE<- sqrt(mean((pred-y)^2))
 
 marg.sig1<-inla.tmarginal(function(x){(exp(x))^2},multilevelS_lognormal1$marginals.hyperpar$`Theta1 for spatintercept`)
 inla.zmarginal(marg.sig1)
@@ -415,7 +420,7 @@ library(MBA)
 int.elev1 <- mba.surf(cbind(rh,rv,rz1), 200, 200, extend=TRUE)$xyz.est
 
 
-
+n.blocks <- 2^L
 dir.save = getwd()
 png(paste(dir.save,'/Fulmultilevel_lognormalInt_L',n.blocks,'_',M,"_etas.png",sep=""))
 image.plot(int.elev1 , #main='spatial random effects',
@@ -425,7 +430,7 @@ dev.off()
 
 
 X <- as.matrix(cbind(1,train[,c("area","livingRoom","gamma_int_elev",
-                                "gamma_int_subway","gamma_int_Freq", 
+                                "gamma_int_subway", 
                                 "gamma_int_age")]))
 
 
@@ -434,80 +439,110 @@ X1 <- data.frame(X[,-1])
 y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
-n.sample <- 1e4
+n.sample <- 100 #1e4
 set.seed(5)
 multilevel0.pos <- generate(multilevelS_lognormal1, X1, n.samples = n.sample)
+multilevel0.pos.hyper <- inla.hyperpar.sample(n = n.sample, result=multilevelS_lognormal1)
 
+filename2= paste("posteriorFulmultilevel_lognormalInt_L",n.blocks,"_", M,".Rdata",sep="")
+save(multilevel0.pos, file=filename2)
+filename2= paste("hyperFulmultilevel_lognormalInt_L",n.blocks,"_",M,".Rdata",sep="")
+save(multilevel0.pos.hyper, file=filename2)
 
 
 # for intercept process
-predict.spatial0<- function(j="iterations",i="ith location"){
+predict.spatial1<- function(j="iterations",i="ith location"){
   
+  #  Mp=M   
   theta1<-multilevel0.pos[[j]]$Theta1_for_spatintercept
   theta2<-multilevel0.pos[[j]]$Theta2_for_spatintercept
   
   sigma2<-exp(theta1)^2
   phis<-2/exp(theta2)
   
-  b.i<-which.min(spDistsN1(as.matrix(block.center[,1:2]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
-  B.i<-C_iN %*% C_N.inv
-  F.i<-sigma2-B.i%*%C_iN
-  z.i<-rnorm(1, B.i%*% multilevel0.pos[[j]]$spatintercept[which(train.coord$block.ind==b.i)],sqrt(F.i))
-  #  z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatintercept,sqrt(F.i))
+  b.i<-train.coord$block.ind[which.min(spDistsN1(as.matrix(train.coord[,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))]
+  
+  # Mp =1 or Mp=M
+  if(Mp==1|b.i==1){
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel0.pos[[j]]$spatintercept[which(train.coord$block.ind==b.i)],sqrt(F.i))
+   }else{
+    nn.block<-subset(train.coord,block.ind %in% neighbor.block$NN_ind[b.i-1,])
+    b.ii<- c(b.i, unique(nn.block$block.ind))
+    indblockpred <- NULL
+    for(k in 1:length(b.ii)){
+      indp <- which(train.coord$block.ind==b.ii[k])
+      indblockpred <- c(indblockpred,indp)
+    }
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[indblockpred,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    D_b1<-spDists(as.matrix(train.coord[indblockpred, c("Lng","Lat")]),longlat = TRUE)
+    C_N.inv<-solve(sigma2*exp(-phis*D_b1))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel0.pos[[j]]$spatintercept[indblockpred],sqrt(F.i))
+   }
   return(z.i)
 }
+
+
+Mp=M
 
 pre_Z.0<-matrix(NA, nr=n.sample,nc=dim(test.coord)[1])
 colnames(pre_Z.0)<-test.coord$location
 for (i in 1:dim(test.coord)[1]) {
   print(i)
-  res1<-mclapply(1:n.sample,predict.spatial0,i=i,mc.cores = 4)
+  res1<-mclapply(1:n.sample,predict.spatial1,i=i,mc.cores = 4)
   pre_Z.0[,i]<-unlist(res1)
 }
+
 
 
 y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
 get.est<-function(i){
-  precision<-multilevel0.pos[[i]]$Precision_for_the_lognormal_observations
-  coef <- matrix(unlist(multilevel0.pos[[i]][2:8]), 7,1)
-  mu <- X%*%coef+
-              rep(multilevel0.pos[[i]]$spatintercept[1:nzip],train.coord$Freq)
-  res1<-rlnorm(n=dim(X)[1], mu ,  sqrt(1/precision))
-   return(res1)
+  precision<-multilevel0.pos.hyper[[i]]#$Precision_parameter_for_the_Gamma_observations
+  coef <- matrix(unlist(multilevel0.pos[[i]][2:7]), 6,1)
+  mu <-(X%*%coef+
+              rep(multilevel0.pos[[i]]$spatintercept[1:nzip],train.coord$Freq))
+  res1 <- rlnorm(n=dim(X)[1], mu ,  sqrt(1/precision))
+  return(res1)
 }
-y.rep<-mclapply(1:n.sample,get.est,mc.cores = 4)
-y.rep<-do.call(rbind,y.rep)
+y.rep1<-mclapply(1:n.sample,get.est,mc.cores = 4)
+y.rep<-do.call(cbind,y.rep1)
 
 
 
 X.test <- as.matrix(cbind(1,test[,c("area","livingRoom","gamma_int_elev",
-                                    "gamma_int_subway","gamma_int_Freq", 
+                                    "gamma_int_subway", 
                                     "gamma_int_age")]))
 
 y.test<-(test$totalPrice)
+
+test$totalPrice 
+
 nzip<-dim(train.coord)[1]
 
 
 
 get.pre<-function(i){
-  precision<-multilevel0.pos[[i]]$Precision_for_the_lognormal_observations
-  coef <- matrix(unlist(multilevel0.pos[[i]][2:8]), 7,1)
-  mu <- X.test%*%coef+
-              rep(pre_Z.0[i,],test.coord$Freq)
-  res2<-rlnorm(n=dim(X.test)[1], mu , sqrt(1/precision))
+  precision<-multilevel0.pos.hyper[[i]]#$Precision_parameter_for_the_Gamma_observations
+  coef <- matrix(unlist(multilevel0.pos[[i]][2:7]), 6,1)
+  mu <-(X.test%*%coef+
+              rep(pre_Z.0[i,],test.coord$Freq))
+  res2 <- rlnorm(n=dim(X.test)[1], mu ,  sqrt(1/precision))
   return(res2)
 }
 
-y.pre<-mclapply(1:n.sample, get.pre, mc.cores = 4)
-y.pre<-do.call(rbind, y.pre)
+y.pre1<-mclapply(1:n.sample, get.pre, mc.cores = 4)
+y.pre<-do.call(cbind, y.pre1)
 
-pre.block.nngp0<-colMeans(y.pre)
+pre.block.nngp0<-rowMeans(y.pre)
 
-est.block.nngp<-colMeans(y.rep)
+est.block.nngp<-rowMeans(y.rep)
 
 RMSEy<- sqrt(mean((est.block.nngp-y)^2))
 
@@ -516,20 +551,23 @@ RMSP<- sqrt(mean((pre.block.nngp0-y.test)^2))
 plot3 <- data.frame(location=test$location, totalPrice=test$totalPrice, 
                     Lng=test$Lng, Lat=test$Lat, pred=pre.block.nngp0 )
 
-
+jpeg(paste(dir.save,"/PREDrandomint_lognormal_",n.blocks, "-",M,"gamma.jpeg",sep=""))
+ggplot(data = plot3,mapping = aes(x=totalPrice,y=pred))+geom_point()+ geom_abline(colour = "grey50")
+dev.off()
 
 # save final res
 name.crit <- c("dic", "waic", "LPML", "RMSEy","time(sec)", "RMSPy")
-crit.model<- round(c( dic, waic, LPML, RMSEy, time, RMSP),3)
+crit.model<- round(c( dic, waic, LPML, RMSE, time, RMSP),3)
 res=data.frame(name.crit, val=crit.model)
 filename2= paste("FULLMULTILEVELrandomint_lognormal_summary_",n.blocks, "-",M,".Rdata",sep="")
 save(res, file=filename2)
 
 
+
 # random intercept process beta=w_s*gamma + eta_s
 get.est5<-function(i){
-  coef <- matrix(unlist(multilevel0.pos[[i]][2:8]), 7,1)
-  ind <- c(1,4,5,6,7)
+  coef <- matrix(unlist(multilevel0.pos[[i]][2:7]), 6,1)
+  ind <- c(1,4,5,6)
   mu <-  (X[,ind]%*%coef[ind]+ rep(multilevel0.pos[[i]]$spatintercept[1:nzip],train.coord$Freq))
   return(mu)
 }
@@ -537,12 +575,11 @@ y.rep5<-mclapply(1:n.sample,get.est5,mc.cores = 4)
 y.rep5<-do.call(cbind,y.rep5)
 rz5<-rowMeans(y.rep5)
 
-#rz5 <- (X[,1:3]%*%coef[1:3]+ rep(multilevel1.pos[[i]]$spatintercept[1:nzip],train.coord$Freq))
 rh5<-train$Lng
 rv5<-train$Lat
 int.elev5 <- mba.surf(cbind(rh5,rv5,rz5), 200, 200, extend=TRUE)$xyz.est
 
-png(paste(dir.save,"/FULLMULTILEVELrandomint_lognormal_",n.blocks, "-",M,"gamma.png",sep=""))
+jpeg(paste(dir.save,"/FULLMULTILEVELrandomint_lognormal_",n.blocks, "-",M,"gamma.jpeg",sep=""))
 image.plot(int.elev5 , #main='spatial random effects',
            xaxs = 'r', yaxs = 'r',
            xlab='Longitude', ylab='Latitude')
@@ -553,13 +590,14 @@ dev.off()
 ############## Multilevel spatial in all coeff ##############
 ###############################################################
 
+
 rm(list=ls())
 
 load("/set_your_directory/NEWbeijing.RData")
 
 # Set the number of blocks L and the number of neighbors M
 L=8 #2^L blocks
-M=4 #number of neighbors
+M=8 #number of neighbors
 
 dir.save=getwd()
 
@@ -737,7 +775,6 @@ library("INLA")
 
 
 ## Calculate hyperparameters
-#range <- (8*nu)/2*phis
 d=2
 prior.range  = c(0.1,0.05)
 prior.sigma  = c(1 ,0.05)
@@ -763,7 +800,6 @@ block.nngp.model2 <- inla.rgeneric.define(inla.rgeneric.blocknngp.model, nzip=di
 svc_formula1 <- totalPrice ~ -1 + intercept +  area  + livingRoom +
   gamma_int_elev +  gamma_area_elev +  gamma_livingRoom_elev +
   gamma_int_subway + gamma_area_subway   + gamma_livingRoom_subway+
-  gamma_int_Freq + gamma_area_Freq   + gamma_livingRoom_Freq +
   gamma_int_age + gamma_area_age   + gamma_livingRoom_age +
   spatintercept(idx, model = block.nngp.model) +
   spatareacov(idx, weights = area, model = block.nngp.model1) +
@@ -775,13 +811,12 @@ multilevel1 <- bru( svc_formula1,
                      data = train,
                    options = list(
                      control.compute = list(waic = TRUE, cpo = TRUE,config=TRUE),
-                     control.inla = list(strategy = "simplified.laplace", int.strategy = "eb"),
                      verbose = FALSE
                    )
 )  
 
 ## save non-spatial model
-n.blocks <- 2^L
+n.blocks = 2^L
 save(multilevel1, file = paste(dir.save,"/multilevelSpat_lognormal_",n.blocks, "-",M,".RData",sep=""))
 
 
@@ -802,16 +837,17 @@ y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
 fit <- multilevel1$summary.fitted.values[1:length(y),]
-pred1 <- exp(fit[,1] + ((1/multilevel1$summary.hyperpar[1,1])^2/2) )
-par(mfrow=c(1,1))
-plot(y, pred1)
-abline(0,1, col="grey40")
+
+y<- (train$totalPrice)
+est0 <- multilevel1$summary.fitted.values$mean[1:length(y)]
+pred <- exp(est0+((1/multilevel1$summary.hyperpar[1,1])^2)/2 )
+RMSE<- sqrt(mean((pred-y)^2))
 
 
 plot2 <- data.frame(location=train$location, totalPrice=train$totalPrice, 
-                    Lng=train$Lng, Lat=train$Lat, pred=pred1 )
+                    Lng=train$Lng, Lat=train$Lat, pred=pred )
 n.blocks <- 2^L
-png(paste(dir.save,"/est_lognormal_multilevel1", n.blocks, "-",M,".png",sep=""))
+jpeg(paste(dir.save,"/est_lognormal_multilevel1", n.blocks, "-",M,".jpeg",sep=""))
 ggplot(data = plot2,mapping = aes(x=totalPrice,y=pred))+geom_point()+
   geom_abline(colour = "grey50")+ 
   labs(x = "y", y = "y_est")
@@ -857,7 +893,7 @@ int.elev3 <- mba.surf(cbind(rh,rv,rz3), 200, 200, extend=TRUE)$xyz.est
 
 n.blocks <- 2^L
 dir.save = getwd()
-png(paste(dir.save,'/Fulmultilevel_lognormal_L',n.blocks,'_',M,"_etas.png",sep=""))
+jpeg(paste(dir.save,'/Fulmultilevel_lognormal_L',n.blocks,'_',M,"_.jpeg",sep=""))
 par(mfrow=c(1,3))
 image.plot(int.elev1 , #main='spatial random effects',
            xaxs = 'r', yaxs = 'r',
@@ -873,8 +909,8 @@ dev.off()
 
 X <- as.matrix(cbind(1,train[,c("area","livingRoom","gamma_int_elev","gamma_area_elev",
                                 "gamma_livingRoom_elev","gamma_int_subway","gamma_area_subway",
-                                "gamma_livingRoom_subway", "gamma_int_Freq", "gamma_area_Freq",
-                                "gamma_livingRoom_Freq", "gamma_int_age", "gamma_area_age", 
+                                "gamma_livingRoom_subway", 
+                                 "gamma_int_age", "gamma_area_age", 
                                 "gamma_livingRoom_age")]))
 
 
@@ -883,11 +919,18 @@ X1 <- data.frame(X[,-1])
 y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
-n.sample <- 1e4
+n.sample <- 100
 set.seed(5)
 multilevel1.pos <- generate(multilevel1, X1, n.samples = n.sample)
+multilevel1.pos.hyper <- inla.hyperpar.sample(n = n.sample, result=multilevel1)
+
+filename2= paste("FULLMULTILEVELrandomcoef_lognormal_posterior_",n.blocks, "-",M,".Rdata",sep="")
+save(multilevel1.pos, file=filename2)
+filename2= paste("FULLMULTILEVELrandomcoef_lognormal_posteriorprec_",n.blocks, "-",M,".Rdata",sep="")
+save(multilevel1.pos.hyper, file=filename2)
 
 
+Mp = M
 
 # for intercept process
 predict.spatial1<- function(j="iterations",i="ith location"){
@@ -898,14 +941,33 @@ predict.spatial1<- function(j="iterations",i="ith location"){
   sigma2<-exp(theta1)^2
   phis<-2/exp(theta2)
   
-  b.i<-which.min(spDistsN1(as.matrix(block.center[,1:2]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
-  B.i<-C_iN %*% C_N.inv
-  F.i<-sigma2-B.i%*%C_iN
-  z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatintercept[which(train.coord$block.ind==b.i)],sqrt(F.i))
+  b.i<-train.coord$block.ind[which.min(spDistsN1(as.matrix(train.coord[,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))]
+  
+  # Mp =1 or Mp=M
+  if(Mp==1|b.i==1){
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatintercept[which(train.coord$block.ind==b.i)],sqrt(F.i))
+  }else{
+    nn.block<-subset(train.coord,block.ind %in% neighbor.block$NN_ind[b.i-1,])
+    b.ii<- c(b.i, unique(nn.block$block.ind))
+    indblockpred <- NULL
+    for(k in 1:length(b.ii)){
+      indp <- which(train.coord$block.ind==b.ii[k])
+      indblockpred <- c(indblockpred,indp)
+    }
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[indblockpred,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    D_b1<-spDists(as.matrix(train.coord[indblockpred, c("Lng","Lat")]),longlat = TRUE)
+    C_N.inv<-solve(sigma2*exp(-phis*D_b1))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatintercept[indblockpred],sqrt(F.i))
+  }
   return(z.i)
 }
+
 
 pre_Z.1<-matrix(NA, nr=n.sample,nc=dim(test.coord)[1])
 colnames(pre_Z.1)<-test.coord$location
@@ -926,14 +988,34 @@ predict.spatial2<- function(j="iterations",i="ith location"){
   sigma2<-exp(theta1)^2
   phis<-2/exp(theta2)
   
-  b.i<-which.min(spDistsN1(as.matrix(block.center[,1:2]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
-  B.i<-C_iN %*% C_N.inv
-  F.i<-sigma2-B.i%*%C_iN
-  z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatareacov[which(train.coord$block.ind==b.i)],sqrt(F.i))
+  b.i<-train.coord$block.ind[which.min(spDistsN1(as.matrix(train.coord[,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))]
+  
+  # Mp =1 or Mp=M
+  if(Mp==1|b.i==1){
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatareacov[which(train.coord$block.ind==b.i)],sqrt(F.i))
+  }else{
+    nn.block<-subset(train.coord,block.ind %in% neighbor.block$NN_ind[b.i-1,])
+    b.ii<- c(b.i, unique(nn.block$block.ind))
+    indblockpred <- NULL
+    for(k in 1:length(b.ii)){
+      indp <- which(train.coord$block.ind==b.ii[k])
+      indblockpred <- c(indblockpred,indp)
+    }
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[indblockpred,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    D_b1<-spDists(as.matrix(train.coord[indblockpred, c("Lng","Lat")]),longlat = TRUE)
+    C_N.inv<-solve(sigma2*exp(-phis*D_b1))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatareacov[indblockpred],sqrt(F.i))
+  }
   return(z.i)
 }
+
+
 
 pre_Z.2<-matrix(NA, nr=n.sample,nc=dim(test.coord)[1])
 colnames(pre_Z.2)<-test.coord$location
@@ -952,14 +1034,34 @@ predict.spatial3<- function(j="iterations",i="ith location"){
   sigma2<-exp(theta1)^2
   phis<-2/exp(theta2)
   
-  b.i<-which.min(spDistsN1(as.matrix(block.center[,1:2]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
-  C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
-  B.i<-C_iN %*% C_N.inv
-  F.i<-sigma2-B.i%*%C_iN
-  z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatareacov[which(train.coord$block.ind==b.i)],sqrt(F.i))
+  b.i<-train.coord$block.ind[which.min(spDistsN1(as.matrix(train.coord[,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))]
+  
+  # Mp =1 or Mp=M
+  if(Mp==1|b.i==1){
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[train.coord$block.ind==b.i,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    C_N.inv<-solve(sigma2*exp(-phis*D_b[[b.i]]))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatlivingRoomcov[which(train.coord$block.ind==b.i)],sqrt(F.i))
+  }else{
+    nn.block<-subset(train.coord,block.ind %in% neighbor.block$NN_ind[b.i-1,])
+    b.ii<- c(b.i, unique(nn.block$block.ind))
+    indblockpred <- NULL
+    for(k in 1:length(b.ii)){
+      indp <- which(train.coord$block.ind==b.ii[k])
+      indblockpred <- c(indblockpred,indp)
+    }
+    C_iN<-sigma2*exp(-phis*spDistsN1(as.matrix(train.coord[indblockpred,c("Lng","Lat")]), as.matrix(test.coord[i,c("Lng","Lat")]),longlat = TRUE))
+    D_b1<-spDists(as.matrix(train.coord[indblockpred, c("Lng","Lat")]),longlat = TRUE)
+    C_N.inv<-solve(sigma2*exp(-phis*D_b1))
+    B.i<-C_iN %*% C_N.inv
+    F.i<-sigma2-B.i%*%C_iN
+    z.i<-rnorm(1, B.i%*% multilevel1.pos[[j]]$spatlivingRoomcov[indblockpred],sqrt(F.i))
+  }
   return(z.i)
 }
+
+
 
 pre_Z.3<-matrix(NA, nr=n.sample,nc=dim(test.coord)[1])
 colnames(pre_Z.3)<-test.coord$location
@@ -972,21 +1074,21 @@ for (i in 1:dim(test.coord)[1]) {
 
 X <- as.matrix(cbind(1,train[,c("area","livingRoom","gamma_int_elev","gamma_area_elev",
                                 "gamma_livingRoom_elev","gamma_int_subway","gamma_area_subway",
-                                "gamma_livingRoom_subway", "gamma_int_Freq", "gamma_area_Freq",
-                                "gamma_livingRoom_Freq", "gamma_int_age", "gamma_area_age", 
+                                "gamma_livingRoom_subway", "gamma_int_age", "gamma_area_age", 
                                 "gamma_livingRoom_age")]))
 
 y<- (train$totalPrice)
 nzip<-dim(train.coord)[1]
 
 get.est<-function(i){
-  precision<-multilevel1.pos[[i]]$Precision_for_the_lognormal_observations
-  coef <- matrix(unlist(multilevel1.pos[[i]][2:16]), 15,1)
-  mu <- X%*%coef+
+  precision<-multilevel1.pos.hyper[[i]]
+  coef <- matrix(unlist(multilevel1.pos[[i]][2:13]), 12,1)
+  mu <- exp(X%*%coef+
               rep(multilevel1.pos[[i]]$spatintercept[1:nzip],train.coord$Freq)+
               +train$area*rep(multilevel1.pos[[i]]$spatareacov[1:nzip],train.coord$Freq)+
-              +train$livingRoom*rep(multilevel1.pos[[i]]$spatlivingRoomcov[1:nzip],train.coord$Freq)
-  res1<-rlnorm(n=dim(X)[1], mu, sqrt(1/precision))
+              +train$livingRoom*rep(multilevel1.pos[[i]]$spatlivingRoomcov[1:nzip],train.coord$Freq))
+  b         <- mu / precision
+  res1<-rgamma(n=dim(X)[1], shape = precision ,  scale = b)
   return(res1)
 }
 y.rep<-mclapply(1:n.sample,get.est,mc.cores = 4)
@@ -995,29 +1097,35 @@ y.rep<-do.call(rbind,y.rep)
 
 X.test <- as.matrix(cbind(1,test[,c("area","livingRoom","gamma_int_elev","gamma_area_elev",
                                     "gamma_livingRoom_elev","gamma_int_subway","gamma_area_subway",
-                                    "gamma_livingRoom_subway", "gamma_int_Freq", "gamma_area_Freq",
-                                    "gamma_livingRoom_Freq", "gamma_int_age", "gamma_area_age", 
+                                    "gamma_livingRoom_subway", "gamma_int_age", "gamma_area_age", 
                                     "gamma_livingRoom_age")]))
 
 y.test<-(test$totalPrice)
 nzip<-dim(train.coord)[1]
 
 
+rh2<-test.coord$Lng
+rv2<-test.coord$Lat
+rz11<-colMeans(pre_Z.1)
+rz22<-colMeans(pre_Z.2)
+rz33<-colMeans(pre_Z.3)
+
 
 get.pre<-function(i){
-  precision<-multilevel1.pos[[i]]$Precision_for_the_lognormal_observations
-  coef <- matrix(unlist(multilevel1.pos[[i]][2:16]), 15,1)
-  mu <- X.test%*%coef+
-              rep(pre_Z.1[i,],test.coord$Freq)+
-              test$area*rep(pre_Z.2[i,],test.coord$Freq)+
-              test$livingRoom*rep(pre_Z.3[i,],test.coord$Freq)
-  
-  res2<-rlnorm(n=dim(X.test)[1],mu,sqrt(1/precision))
+  precision<- multilevel1.pos.hyper[[i]]
+  coef <- matrix(unlist(multilevel1.pos[[i]][2:13]), 12,1)
+  mu <- exp(X.test%*%coef+
+              rep(rz11,test.coord$Freq)+
+              test$area*rep(rz22,test.coord$Freq)+
+              test$livingRoom*rep(rz33,test.coord$Freq)
+  )
+  b         <- mu / precision
+  res2<-rgamma(n=dim(X.test)[1], shape = precision ,  scale = b)
   return(res2)
 }
 
-y.pre<-mclapply(1:n.sample, get.pre, mc.cores = 4)
-y.pre<-do.call(rbind, y.pre)
+y.pre1<-mclapply(1:n.sample, get.pre, mc.cores = 4)
+y.pre<-do.call(rbind, y.pre1)
 
 pre.block.nngp2<-colMeans(y.pre)
 
@@ -1027,28 +1135,28 @@ RMSEy<- sqrt(mean((est.block.nngp-y)^2))
 
 RMSP<- sqrt(mean((pre.block.nngp2-y.test)^2))
 
-# save final res
-name.crit <- c("dic", "waic", "LPML", "RMSEy","time(sec)", "RMSPy")
-crit.model<- round(c( dic, waic, LPML, RMSEy, time, RMSP),3)
-res=data.frame(name.crit, val=crit.model)
-filename2= paste("FULLMULTILEVELrandomcoef_lognormal_summary_",n.blocks, "-",M,".Rdata",sep="")
-save(res, file=filename2)
-
-
 plot3 <- data.frame(location=test$location, totalPrice=test$totalPrice, 
                     Lng=test$Lng, Lat=test$Lat, pred=pre.block.nngp2 )
 
 
 #Fulmultilevel_gamma_L256_4_PRED
-png(paste(dir.save,"/Fulmultilevel_LN_L",n.blocks,"_",M,"_PRED.png",sep=""))
+jpeg(paste(dir.save,"/Fulmultilevel_lognormal_L",n.blocks,"_",M,"_PRED.jpeg",sep=""))
 ggplot(data = plot3,mapping = aes(x=totalPrice,y=pred))+geom_point()+ geom_abline(colour = "grey50")
 dev.off()
+
+# save final res
+name.crit <- c("dic", "waic", "LPML", "RMSEy","time(sec)", "RMSPy")
+crit.model<- round(c( dic, waic, LPML, RMSE, time, RMSP),3)
+res=data.frame(name.crit, val=crit.model)
+filename2= paste("FULLMULTILEVELrandomcoef_lognormal_summary_",n.blocks, "-",M,".Rdata",sep="")
+save(res, file=filename2)
+
 
 
 # random intercept process beta=w_s*gamma + eta_s
 get.est5<-function(i){
-  coef <- matrix(unlist(multilevel1.pos[[i]][2:16]), 15,1)
-  ind <- c(1, 4, 7, 10, 13)
+  coef <- matrix(unlist(multilevel1.pos[[i]][2:13]), 12,1)
+  ind <- c(1, 4, 7, 10)
   mu <-  (X[,ind]%*%coef[ind]+ rep(multilevel1.pos[[i]]$spatintercept[1:nzip],train.coord$Freq))
   return(mu)
 }
@@ -1056,15 +1164,14 @@ y.rep5<-mclapply(1:n.sample,get.est5,mc.cores = 4)
 y.rep5<-do.call(cbind,y.rep5)
 rz5<-rowMeans(y.rep5)
 
-#rz5 <- (X[,1:3]%*%coef[1:3]+ rep(multilevel1.pos[[i]]$spatintercept[1:nzip],train.coord$Freq))
 rh5<-train$Lng
 rv5<-train$Lat
 int.elev5 <- mba.surf(cbind(rh5,rv5,rz5), 200, 200, extend=TRUE)$xyz.est
 
 # random beta1 process beta1=w_s*gamma + eta_s
 get.est51<-function(i){
-  coef <- matrix(unlist(multilevel1.pos[[i]][2:16]), 15,1)
-  ind <- c(2, 5, 8, 11, 14)
+  coef <- matrix(unlist(multilevel1.pos[[i]][2:13]), 12,1)
+  ind <- c(2, 5, 8, 11)
   mu <- (X[,ind]%*%coef[ind]+ train$area*rep(multilevel1.pos[[i]]$spatareacov[1:nzip],train.coord$Freq))
   return(mu)
 }
@@ -1072,13 +1179,12 @@ y.rep51<-mclapply(1:n.sample,get.est51,mc.cores = 4)
 y.rep51<-do.call(cbind,y.rep51)
 rz51<-rowMeans(y.rep51)
 
-#rz3 <- (X[,4:6]%*%coef[4:6]+ rep(multilevel1.pos[[i]]$spatareacov[1:nzip],train.coord$Freq))
 int.elev51 <- mba.surf(cbind(rh5,rv5,rz51), 200, 200, extend=TRUE)$xyz.est
 
 # random beta2 process beta2=w_s*gamma + eta_s
 get.est52<-function(i){
-  coef <- matrix(unlist(multilevel1.pos[[i]][2:16]), 15,1)
-  ind <- c(3, 6, 9, 12, 15)
+  coef <- matrix(unlist(multilevel1.pos[[i]][2:13]), 12,1)
+  ind <- c(3, 6, 9, 12)
   mu <- (X[,ind]%*%coef[ind]+ train$livingRoom*rep(multilevel1.pos[[i]]$spatlivingRoomcov[1:nzip],train.coord$Freq))
   return(mu)
 }
@@ -1086,12 +1192,11 @@ y.rep52<-mclapply(1:n.sample,get.est52,mc.cores = 4)
 y.rep52<-do.call(cbind,y.rep52)
 rz52<-rowMeans(y.rep52)
 
-#rz3 <- (X[,7:9]%*%coef[7:9]+ rep(multilevel1.pos[[i]]$spatlivingRoomcov[1:nzip],train.coord$Freq))
 
 int.elev52 <- mba.surf(cbind(rh5,rv5,rz52), 200, 200, extend=TRUE)$xyz.est
 
 
-png(paste(dir.save,"/FULLMULTILEVELrandomcoef_lognormal_",n.blocks, "-",M,"gamma.png",sep=""))
+jpeg(paste(dir.save,"/FULLMULTILEVELrandomcoef_lognormal_",n.blocks, "-",M,"gamma.jpeg",sep=""))
 par(mfrow=c(1,3))
 image.plot(int.elev5 , #main='spatial random effects',
            xaxs = 'r', yaxs = 'r',
@@ -1105,3 +1210,25 @@ image.plot(int.elev52 , #main='spatial random effects',
 dev.off()
 
 
+
+jpeg(paste(dir.save,"/FULLMULTILEVEL_plot10lognormal_",n.blocks, "-",M,".jpeg",sep=""))
+par(mfrow=c(2,3))
+image.plot(int.elev1 , #main='spatial random effects',
+           xaxs = 'r', yaxs = 'r',
+           xlab='Longitude', ylab='Latitude')
+image.plot(int.elev2 , #main='spatial random effects',
+           xaxs = 'r', yaxs = 'r',
+           xlab='Longitude', ylab='Latitude')
+image.plot(int.elev3 , #main='spatial random effects',
+           xaxs = 'r', yaxs = 'r',
+           xlab='Longitude', ylab='Latitude')
+image.plot(int.elev5 , #main='spatial random effects',
+           xaxs = 'r', yaxs = 'r',
+           xlab='Longitude', ylab='Latitude')
+image.plot(int.elev51 , #main='spatial random effects',
+           xaxs = 'r', yaxs = 'r',
+           xlab='Longitude', ylab='Latitude')
+image.plot(int.elev52 , #main='spatial random effects',
+           xaxs = 'r', yaxs = 'r',
+           xlab='Longitude', ylab='Latitude')
+dev.off()
