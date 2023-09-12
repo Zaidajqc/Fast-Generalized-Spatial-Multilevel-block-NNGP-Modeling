@@ -1,5 +1,4 @@
 ############################################################################
-## Author: Z. Quiroz, M. O. Prates, Zhiyong Hu and  D. Dey.
 ## Date: 12.09.2023
 ##
 ## Description:
@@ -9,6 +8,8 @@
 ##    Integrated Nested Laplace approximation (INLA). These models are
 ##    applied to transaction Beijing data. It is assumed a lognormal 
 ##    distribution for the sale price response variable.
+##     @authors:  Zaida Quiroz (\email{zquiroz@pucp.edu.pe}) and 
+##     Zhiyong Hu (\email{zhiyong.hu@uconn.edu})   
 #############################################################################
 
 gc()
