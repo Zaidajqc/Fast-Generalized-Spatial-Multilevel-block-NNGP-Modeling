@@ -319,7 +319,6 @@ multilevelsim1 <- function(indseed){
                        family = "gamma"), 
                      options = list(
                        control.compute = list(waic = TRUE, cpo = TRUE,config=TRUE),
-                       #                     control.inla = list(strategy = "simplified.laplace", int.strategy = "eb"),
                        verbose = FALSE
                      )
   )
