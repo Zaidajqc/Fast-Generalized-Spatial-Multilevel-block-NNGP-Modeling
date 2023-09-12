@@ -1,6 +1,5 @@
 
 ############################################################################
-## Author: Z. Quiroz, M. O. Prates, Zhiyong Hu and  D. Dey.
 ## Date: 31.08.2023
 ##
 ## Description:
@@ -9,7 +8,9 @@
 ##    Integrated Nested Laplace approximation (INLA). The BlockNNGP latent effect is implemented
 ##    using the rgeneric funcion. 
 ##    We set family="gamma" in inla() function.
-
+##     @authors:  Zaida Quiroz (\email{zquiroz@pucp.edu.pe}) and 
+##     Zhiyong Hu (\email{zhiyong.hu@uconn.edu})   
+##
 #############################################################################
 
 
