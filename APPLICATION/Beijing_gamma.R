@@ -1,3 +1,15 @@
+############################################################################
+## Author: Z. Quiroz, M. O. Prates, Zhiyong Hu and  D. Dey.
+## Date: 12.09.2023
+##
+## Description:
+##
+##    The code performs a Bayesian analysis of multilevel in intercept 
+##    block-NNGP models and full multilevel block-NNGP models using
+##    Integrated Nested Laplace approximation (INLA). These models are
+##    applied to transaction Beijing data. It is assumed a gamma distribution
+##    for the sale price response variable.
+#############################################################################
 
 gc()
 rm(list=ls())
