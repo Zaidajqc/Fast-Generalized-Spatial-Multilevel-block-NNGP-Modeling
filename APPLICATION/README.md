@@ -1,6 +1,6 @@
 # Fast Generalized Spatial Multilevel block-NNGP Modeling
 
-## Zaida Quiroz, Marcos Prates, Zhiyong Hu and Dipak Dey.
+## Marcos Prates, Zaida Quiroz, Zhiyong Hu and Dipak Dey.
 
 We provide the R code needed to run  full multilevel block-NNGP models using Integrated Nested Laplace approximation (INLA) applied to study the sales price of houses in Beijing. 
 
