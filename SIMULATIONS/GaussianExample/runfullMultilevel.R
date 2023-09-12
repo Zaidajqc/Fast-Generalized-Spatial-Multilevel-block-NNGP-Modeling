@@ -8,8 +8,9 @@
 ##    The code performs a Bayesian analysis of full multilevel block-NNGP models using
 ##    Integrated Nested Laplace approximation (INLA). The BlockNNGP latent effect is implemented
 ##    using the rgeneric funcion. 
-
-
+##
+##     @authors:  Zaida Quiroz (\email{zquiroz@pucp.edu.pe}) and 
+##     Zhiyong Hu (\email{zhiyong.hu@uconn.edu})   
 #############################################################################
 
 
