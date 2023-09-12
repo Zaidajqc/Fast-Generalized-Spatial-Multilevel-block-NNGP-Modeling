@@ -312,7 +312,6 @@ multilevel1 <- bru(svc_components,
                    ),
                    options = list(
                      control.compute = list(waic = TRUE, cpo = TRUE,config=TRUE),
-                     #                     control.inla = list(strategy = "simplified.laplace", int.strategy = "eb"),
                      verbose = FALSE
                    )
 )
